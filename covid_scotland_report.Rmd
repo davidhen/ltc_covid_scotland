@@ -14,56 +14,22 @@ knitr::opts_chunk$set(echo = FALSE,
 
 ```{r}
 library(tidyverse)
-#Get most up-to-date version of opendatascot
-#remotes::install_github("datasciencescotland/opendatascot", force = TRUE)
-library(janitor)
-library(lubridate)
-library(opendatascot) 
-#library(phsmethods)   #remotes::install.github("Health-SocialCare-Scotland/phsmethods")
+library(here)
 
 `%nin%` <- negate(`%in%`)
 
 theme_set(theme_minimal(base_family = "Roboto", base_size = 16) +
             theme(panel.grid.minor = element_blank(),
                   axis.title.y = element_text(margin = margin(0, 20, 0, 0)),
-                  axis.title.x = element_text(margin = margin(20, 0, 0, 0))))
+                  axis.title.x = element_text(margin = margin(20, 0, 0, 0)),
+                  plot.caption = element_text(colour = "#AAAAAA")))
 
 colour_palette <- c("#011f4b", "#03396c", "#005b96", "#6497b1", "#b3cde0")
+options(scipen = 10)
 
-#cv_data_main <- ods_dataset("deaths-involving-coronavirus-covid-19",
-                            #return only national data
- #                           geography = "sc") %>% 
-#  select(-refArea, -measureType)
-
-cv_data_main <- read_csv("https://statistics.gov.scot/downloads/cube-table?uri=http%3A%2F%2Fstatistics.gov.scot%2Fdata%2Fdeaths-involving-coronavirus-covid-19") %>% 
-  clean_names() %>% 
-  filter(feature_code == "S92000003") %>% 
-  mutate(date_code = str_replace(date_code, "w/c ", ""),
-         date_code = ymd(date_code)) %>% 
-  filter(!is.na(date_code)) %>% 
-  select(date_code, sex, age, cause_of_death, location_of_death, measurement, value, 
-         -feature_code, -units) %>% 
-  arrange(date_code, sex, age, cause_of_death, location_of_death, measurement)
-
-
-cv_data_manage <- ods_dataset("coronavirus-covid-19-management-information",
-                              variable = 
-                                c("delayed-discharges",
-      "adult-care-homes-cumulative-number-that-have-reported-a-suspected-covid-19-case",
-      "adult-care-homes-proportion-that-have-reported-a-suspected-covid-19-case",
-      "adult-care-homes-cumulative-number-that-have-reported-more-than-one-suspected-covid-19-case",
-      "adult-care-homes-number-with-current-suspected-covid-19-cases",
-      "adult-care-homes-proportion-with-current-suspected-covid-19-cases",
-      "adult-care-homes-cumulative-number-of-suspected-covid-19-cases",
-      "adult-care-homes-daily-number-of-new-suspected-covid-19-cases",
-      "adult-care-homes-number-of-staff-reported-as-absent",
-      "adult-care-homes-adult-care-homes-which-submitted-a-return",
-      "adult-care-homes-response-rate",
-      "adult-care-homes-total-number-of-staff-in-adult-care-homes-which-submitted-a-return",
-      "adult-care-homes-staff-absence-rate"),
-      geography = "sc") %>% 
-  select(-refArea)
-
+cv_data_main <- feather::read_feather("derived_data/cv_data_main.feather")
+cv_data_manage <- feather::read_feather("derived_data/cv_data_manage.feather")
+pop_est <- feather::read_feather("derived_data/pop_est.feather")
 ```
 
 # Key points
@@ -118,6 +84,37 @@ cv_data_main %>%
 ```
 
 
-The implication of Figure 1 is that the risk of death rises substantially with age. Figure 2 adjusts the data in Figure 1 by size of the cohort to assess relative risk. Thus, those aged 15 to 44 face a risk of death that is only 2% of the average risk of death from COVID-19 in Scotland. In contrast, the risk for those aged 85+ is more than 17 times the Scottish average. There is a massive gradient in the risk of death across age groups. This finding is not specific to Scotland: the oldest old were clearly at highest risk in those countries which had experienced a COVID-19 outbreak before Scotland. This information was widely available to those charged with reacting to the outbreak before it arrived in the UK, including in Scotland.
+The implication of Figure 1 is that the risk of death rises substantially with age. Figure 2 adjusts the data in Figure 1 by size of the cohort to assess relative risk. Thus, those aged 15 to 44 face a risk of death that is only 1.5% of the average risk of death from COVID-19 in Scotland. In contrast, the risk for those aged 85+ is more than 17 times the Scottish average. There is a massive gradient in the risk of death across age groups. This finding is not specific to Scotland: the oldest old were clearly at highest risk in those countries which had experienced a COVID-19 outbreak before Scotland. This information was widely available to those charged with reacting to the outbreak before it arrived in the UK, including in Scotland.
+
+*Figure 2*
+
+```{r}
+cv_data_main %>% 
+  filter(sex == "All" & location_of_death == "All" & cause_of_death == "COVID-19 related") %>% 
+  filter(age != "All") %>% 
+  group_by(age) %>% 
+  summarise(n = sum(value)) %>% 
+  left_join(., pop_est) %>% 
+  mutate(risk = n/pop_est_2018,
+         av_risk = sum(n)/sum(pop_est_2018),
+         relative_risk = risk/av_risk) %>% 
+  ggplot(aes(age, relative_risk)) +
+  geom_col(fill = colour_palette[3]) +
+  geom_text(aes(label = round(relative_risk,1), 
+                y = relative_risk + 1)) +
+  labs(title = "Risk of dying from COVID-19 relative to Scottish average",
+       subtitle = "16th March 2020 to 25th May 2020",
+       x = "",
+       y = "Relative Risk",
+       caption = "Source:Own calculations derived with data from National Records of Scotland\nand opendata.nhs.scot (2018 mid-year population estimates)")
+```
+
+Given this steep age gradient in risk, care home residents, who are largely drawn from the oldest age groups, were likely to be particularly vulnerable as the outbreak took hold in Scotland. This turned out to be the case. In the remainder of this paper, we discuss the evolution of mortality in Scottish care homes during the outbreak. At the time of writing (`r format(Sys.time(), "%d %B, %Y")`), the COVID-19 outbreak has not been brought fully under control, so future updates to this paper will document a more complete picture of its effects on Scotland's care home population. We begin by describing the care home industry in Scotland
+
 
 # Scotland's Care Homes
+
+There are 1,084 adult care homes in Scotland of which 817 cater mainly for older people. This number has declined in recent years, though the number of registered places for older people has remained relatively stable at around 37,500. This implies a gradual increase in the size of care homes, many of which are managed by private sector enterprises. These have tended to replace smaller charitable sector and local authority care homes. One reason for the contraction of the charitable sector is the difficulty of finding staff in rural and remote areas. The number of older care home residents In Scotland has also been stable at around 33,000, implying a generally high rate of occupancy. For the last two decades, Scottish policy has favoured care provision in individuals’ own homes rather than in care homes. This has offset demographic pressures which might have resulted in increased provision of care home places. In 2017-18 around 47,000 people aged 65+ were receiving “personal care” funded by the Scottish Government in their own homes. Personal care is care associated with personal hygiene, feeding, toileting and appearance. One might expect that a benefit of the focus on care at home would be that the risk of infection for care clients living at home would be less than for those in communal establishments. As we shall see subsequently, there is no clear evidence that this is the case: numbers of deaths in settings other than hospitals and care homes have also increased dramatically in recent weeks.
+
+Care homes typically cater for the oldest old. This is shown in Figure 3, which gives the shares of the relevant age groups resident in care homes. This ranges from 0.5 per cent of those aged 65-74 to around 1/3 of those aged 95 and above. Given that the prevalence of COVID-19 increases with age, it is not surprising that care home residents are particularly at risk. A typical pathway through social care provision in Scotland would involve care in the domiciliary setting until that is deemed unsafe for the client followed by transfer to a care home.
+

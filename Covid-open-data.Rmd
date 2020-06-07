@@ -26,6 +26,8 @@ library(tidyverse)
 library(janitor)
 library(lubridate)
 library(opendatascot) 
+library(here)
+library(curl)
 #library(phsmethods)   #remotes::install.github("Health-SocialCare-Scotland/phsmethods")
 
 `%nin%` <- negate(`%in%`)
@@ -33,7 +35,12 @@ library(opendatascot)
 theme_set(theme_minimal(base_family = "Roboto", base_size = 16) +
             theme(panel.grid.minor = element_blank(),
                   axis.title.y = element_text(margin = margin(0, 20, 0, 0)),
-                  axis.title.x = element_text(margin = margin(20, 0, 0, 0))))
+                  axis.title.x = element_text(margin = margin(20, 0, 0, 0)),
+                  plot.caption = element_text(colour = "#AAAAAA")))
+
+colour_palette <- c("#011f4b", "#03396c", "#005b96", "#6497b1", "#b3cde0")
+
+options(scipen = 10)
 ```
 
 ## Data
@@ -63,6 +70,12 @@ cv_data_main <- read_csv("https://statistics.gov.scot/downloads/cube-table?uri=h
 cv_data_main 
 ```
 
+```{r, eval=FALSE}
+#Save data for report
+feather::write_feather(cv_data_main, "derived_data/cv_data_main.feather")
+```
+
+
 
 ### Management info
 
@@ -90,10 +103,57 @@ cv_data_manage <- ods_dataset("coronavirus-covid-19-management-information",
 cv_data_manage
 ```
 
+```{r, eval=FALSE}
+#Save data for report
+feather::write_feather(cv_data_manage, "derived_data/cv_data_manage.feather")
+```
+
+
+### Population estimates
+
+API is not good for population data - it keeps on timing out on me plus most recent figures are for 2014. 
+The NHS Scotland open data file is also very large so will read in with `fread()` directly from url.
+
+
+```{r}
+pop_est <- data.table::fread("https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/c505f490-c201-44bd-abd1-1bd7a64285ee/download/dz2011-pop-est_30082019.csv") %>% 
+  clean_names %>% 
+  filter(year == "2018") %>% 
+  select(-year)
+
+
+pop_est %>% 
+  mutate(`0 years` = rowSums(pop_est[,c(5)]),
+         `1-14 years` = rowSums(pop_est[,c(15:19)]),
+         `15-44 years` = rowSums(pop_est[,c(20:49)]),
+         `45-64 years` = rowSums(pop_est[,c(50:69)]),
+         `65-74 years` = rowSums(pop_est[,c(70:79)]),
+         `75-84 years` = rowSums(pop_est[,c(80:89)]),
+         `85 years and over` = rowSums(pop_est[,c(90:95)])) %>% 
+  select(`0 years`:`85 years and over`) %>%
+  slice(1:2) %>% 
+  summarise(`0 years` = sum(`0 years`),
+         `1-14 years` = sum(`1-14 years`),
+         `15-44 years` = sum(`15-44 years`),
+         `45-64 years` = sum(`45-64 years`),
+         `65-74 years` = sum(`65-74 years`),
+         `75-84 years` = sum(`75-84 years`),
+         `85 years and over` = sum(`85 years and over`)) %>% 
+  pivot_longer(cols = `0 years`:`85 years and over`, 
+               names_to = "age", 
+               values_to = "pop_est_2018") -> pop_est
+```
+```{r, eval=FALSE}
+#Save data for report
+feather::write_feather(pop_est, "derived_data/pop_est.feather")
+```
+
 
 # Plots
 
 ## Figure 1
+
+Simple count and % of deaths.
 
 ```{r, fig.width=12, fig.height=9}
 cv_data_main %>% 
@@ -103,7 +163,7 @@ cv_data_main %>%
   summarise(n = sum(value)) %>%
   mutate(pct = round(n/sum(n), 3)) %>% 
   ggplot(aes(age, n)) +
-  geom_col(fill = "#4477AA") +
+  geom_col(fill = colour_palette[1]) +
   geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80)) +
   scale_y_continuous(limits = c(0, 2000)) +
   labs(x = "",
@@ -114,15 +174,30 @@ cv_data_main %>%
   
 ```
 
+
+
 ## Figure 2
 
-```{r}
+
+```{r, fig.width=12, fig.height=9}
 cv_data_main %>% 
   filter(sex == "All" & location_of_death == "All" & cause_of_death == "COVID-19 related") %>% 
   filter(age != "All") %>% 
   group_by(age) %>% 
   summarise(n = sum(value)) %>% 
-  mutate(pct = round(n/sum(n) *100 ,1))
+  left_join(., pop_est) %>% 
+  mutate(risk = n/pop_est_2018,
+         av_risk = sum(n)/sum(pop_est_2018),
+         relative_risk = risk/av_risk) %>% 
+  ggplot(aes(age, relative_risk)) +
+  geom_col(fill = colour_palette[1]) +
+  geom_text(aes(label = round(relative_risk,1), 
+                y = relative_risk + 1)) +
+  labs(title = "Risk of dying from COVID-19 relative to Scottish average",
+       subtitle = "16th March 2020 to 25th May 2020",
+       x = "",
+       y = "Relative Risk",
+       caption = "Source:National Records of Scotland\nand opendata.nhs.scot (2018 mid-year population estimates)")
 ```
 
 
