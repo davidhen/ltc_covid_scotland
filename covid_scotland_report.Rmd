@@ -18,7 +18,7 @@ library(here)
 
 `%nin%` <- negate(`%in%`)
 
-theme_set(theme_minimal(base_family = "Roboto", base_size = 16) +
+theme_set(theme_minimal(base_family = "Roboto", base_size = 18) +
             theme(panel.grid.minor = element_blank(),
                   axis.title.y = element_text(margin = margin(0, 20, 0, 0)),
                   axis.title.x = element_text(margin = margin(20, 0, 0, 0)),
@@ -29,7 +29,9 @@ options(scipen = 10)
 
 cv_data_main <- feather::read_feather("derived_data/cv_data_main.feather")
 cv_data_manage <- feather::read_feather("derived_data/cv_data_manage.feather")
-pop_est <- feather::read_feather("derived_data/pop_est.feather")
+pop_est_1 <- feather::read_feather("derived_data/pop_est_1.feather")
+pop_est_2 <- feather::read_feather("derived_data/pop_est_2.feather")
+ch_age_groups <- feather::read_feather("derived_data/ch_age_groups.feather")
 ```
 
 # Key points
@@ -73,7 +75,8 @@ cv_data_main %>%
   mutate(pct = round(n/sum(n), 3)) %>% 
   ggplot(aes(age, n)) +
   geom_col(fill = colour_palette[3]) +
-  geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80)) +
+  geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80),
+            size = 6) +
   scale_y_continuous(limits = c(0, 2000)) +
   labs(x = "",
        y = "",
@@ -84,7 +87,9 @@ cv_data_main %>%
 ```
 
 
-The implication of Figure 1 is that the risk of death rises substantially with age. Figure 2 adjusts the data in Figure 1 by size of the cohort to assess relative risk. Thus, those aged 15 to 44 face a risk of death that is only 1.5% of the average risk of death from COVID-19 in Scotland. In contrast, the risk for those aged 85+ is more than 17 times the Scottish average. There is a massive gradient in the risk of death across age groups. This finding is not specific to Scotland: the oldest old were clearly at highest risk in those countries which had experienced a COVID-19 outbreak before Scotland. This information was widely available to those charged with reacting to the outbreak before it arrived in the UK, including in Scotland.
+The implication of Figure 1 is that the risk of death rises substantially with age. Figure 2 adjusts the data in Figure 1 by size of the cohort to assess relative risk. Thus, those aged 15 to 44 face a risk of death that is only 1.5% of the average risk of death from COVID-19 in Scotland. In contrast, the risk for those aged 85+ is more than 17 times the Scottish average. There is a massive gradient in the risk of death across age groups. This finding is not specific to Scotland: the oldest old were clearly at highest risk in those countries which had experienced a COVID-19 outbreak before Scotland. This information was widely available to those charged with reacting to the outbreak before it arrived in the UK, including in Scotland.  
+
+\newpage
 
 *Figure 2*
 
@@ -94,14 +99,14 @@ cv_data_main %>%
   filter(age != "All") %>% 
   group_by(age) %>% 
   summarise(n = sum(value)) %>% 
-  left_join(., pop_est) %>% 
+  left_join(., pop_est_1) %>% 
   mutate(risk = n/pop_est_2018,
          av_risk = sum(n)/sum(pop_est_2018),
          relative_risk = risk/av_risk) %>% 
   ggplot(aes(age, relative_risk)) +
   geom_col(fill = colour_palette[3]) +
   geom_text(aes(label = round(relative_risk,1), 
-                y = relative_risk + 1)) +
+                y = relative_risk + 1), size = 6) +
   labs(title = "Risk of dying from COVID-19 relative to Scottish average",
        subtitle = "16th March 2020 to 25th May 2020",
        x = "",
@@ -116,5 +121,45 @@ Given this steep age gradient in risk, care home residents, who are largely draw
 
 There are 1,084 adult care homes in Scotland of which 817 cater mainly for older people. This number has declined in recent years, though the number of registered places for older people has remained relatively stable at around 37,500. This implies a gradual increase in the size of care homes, many of which are managed by private sector enterprises. These have tended to replace smaller charitable sector and local authority care homes. One reason for the contraction of the charitable sector is the difficulty of finding staff in rural and remote areas. The number of older care home residents In Scotland has also been stable at around 33,000, implying a generally high rate of occupancy. For the last two decades, Scottish policy has favoured care provision in individuals’ own homes rather than in care homes. This has offset demographic pressures which might have resulted in increased provision of care home places. In 2017-18 around 47,000 people aged 65+ were receiving “personal care” funded by the Scottish Government in their own homes. Personal care is care associated with personal hygiene, feeding, toileting and appearance. One might expect that a benefit of the focus on care at home would be that the risk of infection for care clients living at home would be less than for those in communal establishments. As we shall see subsequently, there is no clear evidence that this is the case: numbers of deaths in settings other than hospitals and care homes have also increased dramatically in recent weeks.
 
-Care homes typically cater for the oldest old. This is shown in Figure 3, which gives the shares of the relevant age groups resident in care homes. This ranges from 0.5 per cent of those aged 65-74 to around 1/3 of those aged 95 and above. Given that the prevalence of COVID-19 increases with age, it is not surprising that care home residents are particularly at risk. A typical pathway through social care provision in Scotland would involve care in the domiciliary setting until that is deemed unsafe for the client followed by transfer to a care home.
+Care homes typically cater for the oldest old. This is shown in Figure 3, which gives the shares of the relevant age groups resident in care homes. This ranges from 10.4% of those aged 65-74 to around 1/3 of those aged 95 and above. Given that the prevalence of COVID-19 increases with age, it is not surprising that care home residents are particularly at risk. A typical pathway through social care provision in Scotland would involve care in the domiciliary setting until that is deemed unsafe for the client followed by transfer to a care home.
+
+*Figure 3*
+
+```{r}
+ch_age_groups %>%
+  left_join(., pop_est_2) %>% 
+  mutate(pct = value/pop_est_2018) %>% 
+  ggplot(aes(age, pct)) +
+  geom_col(fill = colour_palette[3]) +
+  geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = pct + 0.01),
+            size = 6) +
+  scale_y_continuous(limits = c(0, 0.2),
+                     labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Percentage of Specified Age groups Resident in Care Homes in Scotland",
+       subtitle = "2017",
+       x = "",
+       y = "",
+       caption = "Source: Scottish Care Home Census via statistics.gov.scot\nand opendata.nhs.scot (2018 mid-year population estimates)")
+```
+Principal responsibility for providing services to social care clients falls on Scotland’s 32 local authorities. Partly as a consequence of the UK Government's austerity measures, Scottish Government funding to these councils has fallen by 7.6% in real terms since 2013-14. This has led to increased funding pressures on care homes. The Scottish Government has also sought to integrate health and social care to improve service delivery to care clients. The Public Bodies (Joint Working) (Scotland) Act 2014 set out the legislative framework for integrating health and social. It created new organisations, known as integration authorities, that are intended to break down barriers to joint working between NHS boards and local authorities. The local authorities and NHS boards were required to submit integration schemes setting out how functions were to be delegated and to produce annual performance reports. Audit Scotland, which analyses the performance of public bodies in Scotland, argued that:
+
+> “While some improvements have been made to the delivery of health and social care services, Integration Authorities, councils and NHS boards need to show a stronger commitment to collaborative working to achieve the real long-term benefits of an integrated system.” 
+>
+> Audit Scotland (2018)
+
+The Care Inspectorate is the regulatory body charged with ensuring that care standards are met in Scotland. It carries out regular, unannounced inspections of Scottish care homes. It recently withdrew the licence of a care home on the Isle of Skye where there had been 7 COVID-19 related deaths ^[Source: [BBC](https://www.bbc.co.uk/news/uk-scotland-highlands-islands-52658559)].
+
+Working conditions in Scottish care homes are similar to those in the rest of the UK. The Scottish Social Services Council (SSSC) is the regulatory body for social care staff which seeks to professionalise care work. Its role is to oversee the registration, workforce development, codes of practice and fitness to practice for all care workers. There are around 205,000 care workers in Scotland. Just over three-quarters of the workforce remain in the same post from year to year. Care workers in Scotland are low paid and many work part-time.
+
+Care home residents with capital assets (including housing) in excess of £28,550 must contribute to the full cost of their care home costs. Scotland differs from the rest of the UK in paying for the “personal care” element of these costs. The personal care contribution is £180 per week. In both Scotland and England, nursing care costs are subsidised. In Scotland, the nursing care contribution is £81 per week, while in England the amount varies between £180.31 and £248.06 per week. In Scotland, because around 70% of care clients do not have sufficient assets, their fees are mainly paid by local government. Local authorities have negotiated a standard weekly charge of £614.71 with care home providers for residential care and £714.94 for nursing care. Charges to self-funding residents average around £770 for residential care and £860 for nursing care.^[Source: [Lang Buisson Care od Older People UK Market Report 30th edition 2019](https://www.payingforcare.org/how-much-does-care-cost/)]
+
+It is against this background that COVID-19 came to affect Scotland’s care homes. In the following sections, we review how it spread across the sector and then discuss how far COVID-19 deaths were concentrated across Scotland’s care homes for older people.
+
+# The Spread of COVID-19 In Scottish Care Homes
+
+Scotland began collecting data on adult care homes that had reported a suspected COVID-19 case on 11th April 2020. These data are collected by the Care Inspectorate and released by the Scottish Government ^[https://www.gov.scot/publications/coronavirus-covid-19-daily-data-for-scotland/]. By 11th April, 406 care homes, comprising 37% of all adult care homes had been infected by COVID-19. Since then, the number of homes affected has increased steadily, reaching 668 (62% of the total) by June 2nd. There was an upward trend of cases reported up until the 29th May, after which no additional care homes reported at least one case of suspected COVID-19.
+
+As discussed above, older adults are at an increased risk of having an adverse outcome after contracting the virus. The shares presented in Figure 4 are based on all care homes i.e. including those care homes that are not specifically for older adults. Thus, included in Figure 4 are around 290 care homes which cater for adults with physical disabilities, mental health problems, learning disabilities and other groups.
+
+Care homes reporting suspected cases to the Care Inspectorate are likely to be care homes for older adults. Thus, the shares reflected here may be somewhat lower than would be the case if the shares were based only on care homes for older adults. Unfortunately, data on suspected cases reported by type of care home are not publicly available.
 

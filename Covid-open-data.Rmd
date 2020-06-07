@@ -116,20 +116,23 @@ The NHS Scotland open data file is also very large so will read in with `fread()
 
 
 ```{r}
-pop_est <- data.table::fread("https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/c505f490-c201-44bd-abd1-1bd7a64285ee/download/dz2011-pop-est_30082019.csv") %>% 
-  clean_names %>% 
-  filter(year == "2018") %>% 
-  select(-year)
+#pop_est_raw <- data.table::fread("https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/c505f490-c201-44bd-abd1-1bd7a64285ee/download/dz2011-pop-est_30082019.csv") %>% 
+#  clean_names %>% 
+#  filter(year == "2018") %>% 
+#  select(-year)
+
+#feather::write_feather(pop_est_raw, "derived_data/pop_est_raw.feather")
+pop_est_raw <- feather::read_feather("derived_data/pop_est_raw.feather")
 
 
-pop_est %>% 
-  mutate(`0 years` = rowSums(pop_est[,c(5)]),
-         `1-14 years` = rowSums(pop_est[,c(15:19)]),
-         `15-44 years` = rowSums(pop_est[,c(20:49)]),
-         `45-64 years` = rowSums(pop_est[,c(50:69)]),
-         `65-74 years` = rowSums(pop_est[,c(70:79)]),
-         `75-84 years` = rowSums(pop_est[,c(80:89)]),
-         `85 years and over` = rowSums(pop_est[,c(90:95)])) %>% 
+pop_est_raw %>% 
+  mutate(`0 years` = rowSums(pop_est_raw[,c(5)]),
+         `1-14 years` = rowSums(pop_est_raw[,c(15:19)]),
+         `15-44 years` = rowSums(pop_est_raw[,c(20:49)]),
+         `45-64 years` = rowSums(pop_est_raw[,c(50:69)]),
+         `65-74 years` = rowSums(pop_est_raw[,c(70:79)]),
+         `75-84 years` = rowSums(pop_est_raw[,c(80:89)]),
+         `85 years and over` = rowSums(pop_est_raw[,c(90:95)])) %>% 
   select(`0 years`:`85 years and over`) %>%
   slice(1:2) %>% 
   summarise(`0 years` = sum(`0 years`),
@@ -141,11 +144,59 @@ pop_est %>%
          `85 years and over` = sum(`85 years and over`)) %>% 
   pivot_longer(cols = `0 years`:`85 years and over`, 
                names_to = "age", 
-               values_to = "pop_est_2018") -> pop_est
+               values_to = "pop_est_2018") -> pop_est_1
 ```
+
+
 ```{r, eval=FALSE}
 #Save data for report
-feather::write_feather(pop_est, "derived_data/pop_est.feather")
+feather::write_feather(pop_est_1, "derived_data/pop_est_1.feather")
+```
+
+
+```{r}
+pop_est_raw %>% 
+  mutate(`18-64-years` = rowSums(pop_est_raw[,c(23:69)]),
+         `65-74-years` = rowSums(pop_est_raw[,c(70:79)]),
+         `75-84-years` = rowSums(pop_est_raw[,c(80:89)]),
+         `85-years-and-over` = rowSums(pop_est_raw[,c(90:95)])) %>% 
+  select(`18-64-years`:`85-years-and-over`) %>%
+  slice(1:2) %>% 
+  summarise(`18-64-years` = sum(`18-64-years`),
+         `65-74-years` = sum(`65-74-years`),
+         `75-84-years` = sum(`75-84-years`),
+         `85-years-and-over` = sum(`85-years-and-over`)) %>% 
+  pivot_longer(cols = `18-64-years`:`85-years-and-over`, 
+               names_to = "age", 
+               values_to = "pop_est_2018") -> pop_est_2
+feather::write_feather(pop_est_2, "derived_data/pop_est_2.feather")
+```
+
+
+
+### Care home characteristics
+
+
+```{r}
+ods_dataset("care-homes-demography",
+            refPeriod = "2017",
+            measureType = "count",
+            sex = "all",
+            mainClientGroupInCareHome = "all-adults",
+            geography = "sc") %>% 
+  select(age, value) %>% 
+  mutate(value = as.numeric(value)) -> df
+
+df %>% 
+  bind_rows(
+    df %>% 
+      filter(age %in% c("85-94-years", "95-years-and-over")) %>% 
+      summarise_if(is.double, sum) %>% 
+      mutate(age = "85-years-and-over")
+  ) %>% 
+  filter(age %nin% c("85-94-years", "95-years-and-over")) -> ch_age_groups
+
+feather::write_feather(ch_age_groups, "derived_data/ch_age_groups.feather")
 ```
 
 
@@ -163,7 +214,7 @@ cv_data_main %>%
   summarise(n = sum(value)) %>%
   mutate(pct = round(n/sum(n), 3)) %>% 
   ggplot(aes(age, n)) +
-  geom_col(fill = colour_palette[1]) +
+  geom_col(fill = colour_palette[3]) +
   geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80)) +
   scale_y_continuous(limits = c(0, 2000)) +
   labs(x = "",
@@ -185,12 +236,12 @@ cv_data_main %>%
   filter(age != "All") %>% 
   group_by(age) %>% 
   summarise(n = sum(value)) %>% 
-  left_join(., pop_est) %>% 
+  left_join(., pop_est_1) %>% 
   mutate(risk = n/pop_est_2018,
          av_risk = sum(n)/sum(pop_est_2018),
          relative_risk = risk/av_risk) %>% 
   ggplot(aes(age, relative_risk)) +
-  geom_col(fill = colour_palette[1]) +
+  geom_col(fill = colour_palette[3]) +
   geom_text(aes(label = round(relative_risk,1), 
                 y = relative_risk + 1)) +
   labs(title = "Risk of dying from COVID-19 relative to Scottish average",
@@ -199,6 +250,27 @@ cv_data_main %>%
        y = "Relative Risk",
        caption = "Source:National Records of Scotland\nand opendata.nhs.scot (2018 mid-year population estimates)")
 ```
+
+## Figure 3
+
+```{r, fig.width=12, fig.height=9}
+ch_age_groups %>%
+  left_join(., pop_est_2) %>% 
+  mutate(pct = value/pop_est_2018) %>% 
+  ggplot(aes(age, pct)) +
+  geom_col(fill = colour_palette[3]) +
+  geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = pct + 0.01),
+            size = 6) +
+  scale_y_continuous(limits = c(0, 0.2),
+                     labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Percentage of Specified Age groups Resident in Care Homes in Scotland",
+       subtitle = "2017",
+       x = "",
+       y = "",
+       caption = "Source: Scottish Care Home Census via statistics.gov.scot\nand opendata.nhs.scot (2018 mid-year population estimates)")
+```
+
+## Figure 4
 
 
 
