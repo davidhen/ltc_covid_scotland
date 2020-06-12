@@ -32,7 +32,7 @@ library(curl)
 
 `%nin%` <- negate(`%in%`)
 
-theme_set(theme_minimal(base_family = "Roboto", base_size = 16) +
+theme_set(theme_minimal(base_family = "Roboto", base_size = 20) +
             theme(panel.grid.minor = element_blank(),
                   axis.title.y = element_text(margin = margin(0, 20, 0, 0)),
                   axis.title.x = element_text(margin = margin(20, 0, 0, 0)),
@@ -52,10 +52,15 @@ Scrape deaths dataset - note I am selecting Scotland only here - it is possible 
 (*Note* issue with API where dates are not being coerced correctly and information is lost. Therefore downloading from the csv link for now)
 
 ```{r, warning=FALSE, message=FALSE}
+
+# need a lookup file for date to week number. 
+
 #cv_data_main <- ods_dataset("deaths-involving-coronavirus-covid-19",
-                            #return only national data
- #                           geography = "sc") %>% 
+#                            #return only national data
+#                           geography = "sc") %>% 
 #  select(-refArea, -measureType)
+
+
 
 cv_data_main <- read_csv("https://statistics.gov.scot/downloads/cube-table?uri=http%3A%2F%2Fstatistics.gov.scot%2Fdata%2Fdeaths-involving-coronavirus-covid-19") %>% 
   clean_names() %>% 
@@ -113,7 +118,6 @@ feather::write_feather(cv_data_manage, "derived_data/cv_data_manage.feather")
 
 API is not good for population data - it keeps on timing out on me plus most recent figures are for 2014. 
 The NHS Scotland open data file is also very large so will read in with `fread()` directly from url.
-
 
 ```{r}
 #pop_est_raw <- data.table::fread("https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/c505f490-c201-44bd-abd1-1bd7a64285ee/download/dz2011-pop-est_30082019.csv") %>% 
@@ -215,16 +219,21 @@ cv_data_main %>%
   mutate(pct = round(n/sum(n), 3)) %>% 
   ggplot(aes(age, n)) +
   geom_col(fill = colour_palette[3]) +
-  geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80)) +
+  geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80),
+            size = 6) +
   scale_y_continuous(limits = c(0, 2000)) +
   labs(x = "",
-       y = "",
+       y = "", 
        title = "Deaths Associated with COVID-19 by Age Group",
-       subtitle = "16th March 2020 to 25th May 2020",
-       caption = "Source: National Records of Scotland\nDeaths where COVID-19 mentioned on the death certificate")
-  
+       subtitle = "16th March 2020 to 25th May 2020",       
+       caption = "Source: National Records of Scotland\nDeaths where COVID-19 mentioned on the death certificate") -> fig_1
+
+fig_1
 ```
 
+```{r, eval=FALSE}
+ggsave("plots/20200609_fig_1.png", fig_1, width = 12, height =9, dpi = 300)
+```
 
 
 ## Figure 2
@@ -243,13 +252,18 @@ cv_data_main %>%
   ggplot(aes(age, relative_risk)) +
   geom_col(fill = colour_palette[3]) +
   geom_text(aes(label = round(relative_risk,1), 
-                y = relative_risk + 1)) +
+                y = relative_risk + 1), size = 6) +
   labs(title = "Risk of dying from COVID-19 relative to Scottish average",
        subtitle = "16th March 2020 to 25th May 2020",
        x = "",
        y = "Relative Risk",
        caption = "Source:National Records of Scotland\nand opendata.nhs.scot (2018 mid-year population estimates)")
 ```
+
+```{r, eval=FALSE}
+ggsave("plots/20200609_fig_2.png", fig_2, width = 12, height =9, dpi = 300)
+```
+
 
 ## Figure 3
 
@@ -267,7 +281,13 @@ ch_age_groups %>%
        subtitle = "2017",
        x = "",
        y = "",
-       caption = "Source: Scottish Care Home Census via statistics.gov.scot\nand opendata.nhs.scot (2018 mid-year population estimates)")
+       caption = "Source: Scottish Care Home Census via statistics.gov.scot\nand opendata.nhs.scot (2018 mid-year population estimates)") -> fig_3
+fig_3
+```
+
+
+```{r, eval=FALSE}
+ggsave("plots/20200609_fig_3.png", fig_3, width = 12, height =9, dpi = 300)
 ```
 
 ## Figure 4
