@@ -12,7 +12,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,
-                      fig.width = 9, fig.height = 6)
+                      fig.width = 12, fig.height = 9)
 ```
 
 # Introduction
@@ -36,9 +36,15 @@ theme_set(theme_minimal(base_family = "Roboto", base_size = 20) +
             theme(panel.grid.minor = element_blank(),
                   axis.title.y = element_text(margin = margin(0, 20, 0, 0)),
                   axis.title.x = element_text(margin = margin(20, 0, 0, 0)),
-                  plot.caption = element_text(colour = "#AAAAAA")))
+                  plot.caption = element_text(colour = "#AAAAAA"),
+                  plot.margin = margin(3,15,3,3,"mm")))
+           
 
 colour_palette <- c("#011f4b", "#03396c", "#005b96", "#6497b1", "#b3cde0")
+
+colours_davidhen <- c("#e53935", "#3949ab", "#8e24aa", "#039be5",
+                      "#00897b", "#7cb342", "#fdd835", "#fb8c00",
+                      "#6d4c41", "#546e7a")
 
 options(scipen = 10)
 ```
@@ -49,30 +55,25 @@ options(scipen = 10)
 
 Scrape deaths dataset - note I am selecting Scotland only here - it is possible to split by LA or Health Board...
 
-(*Note* issue with API where dates are not being coerced correctly and information is lost. Therefore downloading from the csv link for now)
 
 ```{r, warning=FALSE, message=FALSE}
-
-# need a lookup file for date to week number. 
-
-#cv_data_main <- ods_dataset("deaths-involving-coronavirus-covid-19",
-#                            #return only national data
-#                           geography = "sc") %>% 
-#  select(-refArea, -measureType)
-
-
-
-cv_data_main <- read_csv("https://statistics.gov.scot/downloads/cube-table?uri=http%3A%2F%2Fstatistics.gov.scot%2Fdata%2Fdeaths-involving-coronavirus-covid-19") %>% 
+#Download data via API
+cv_data_main <- 
+ods_dataset("deaths-involving-coronavirus-covid-19",
+                            #return only national data
+                           geography = "sc") %>% 
+  select(-refArea, -measureType) %>% 
   clean_names() %>% 
-  filter(feature_code == "S92000003") %>% 
-  mutate(date_code = str_replace(date_code, "w/c ", ""),
-         date_code = ymd(date_code)) %>% 
-  filter(!is.na(date_code)) %>% 
-  select(date_code, sex, age, cause_of_death, location_of_death, measurement, value, 
-         -feature_code, -units) %>% 
-  arrange(date_code, sex, age, cause_of_death, location_of_death, measurement)
-
-cv_data_main 
+  mutate(cause_of_death = str_replace(
+           cause_of_death,
+           "all-causes-average-of-corresponding-week-over-previous-5-years",
+           "all-cause_5yr_average"),
+         cause_of_death = factor(cause_of_death),  
+         age = factor(age, levels = c("all", "0-years", "1-14-years", "15-44-years",
+                                      "45-64-years", "65-74-years", "75-84-years",
+                                      "85-years-and-over")),
+         value = as.integer(value)) 
+cv_data_main
 ```
 
 ```{r, eval=FALSE}
@@ -80,6 +81,28 @@ cv_data_main
 feather::write_feather(cv_data_main, "derived_data/cv_data_main.feather")
 ```
 
+### Weekly
+
+```{r}
+# Create a look-up table for week numbers to dates
+week_lookup <- tibble(
+  week_number = 1:52,
+  week_date = seq(ymd(20191230), ymd(20201221), by = "1 week"))
+
+cv_data_main %>% 
+  filter(ref_period != "2020") %>% 
+  rename(week_number = ref_period) %>% 
+  mutate(week_number = str_replace(week_number, "2020-", ""),
+         week_number = as.integer(week_number)) %>% 
+  left_join(., week_lookup) %>% 
+  select(week_date, week_number, everything()) -> cv_data_weekly
+cv_data_weekly
+```
+
+```{r, eval=FALSE}
+#Save data for report
+feather::write_feather(cv_data_weekly, "derived_data/cv_data_weekly.feather")
+```
 
 
 ### Management info
@@ -88,7 +111,8 @@ There is a lot of information in this extract. I am filtering to just include de
 
 
 ```{r}
-cv_data_manage <- ods_dataset("coronavirus-covid-19-management-information",
+cv_data_manage <- 
+  ods_dataset("coronavirus-covid-19-management-information",
                               variable = 
                                 c("delayed-discharges",
       "adult-care-homes-cumulative-number-that-have-reported-a-suspected-covid-19-case",
@@ -104,7 +128,10 @@ cv_data_manage <- ods_dataset("coronavirus-covid-19-management-information",
       "adult-care-homes-total-number-of-staff-in-adult-care-homes-which-submitted-a-return",
       "adult-care-homes-staff-absence-rate"),
       geography = "sc") %>% 
-  select(-refArea)
+  select(-refArea) %>% 
+  clean_names() %>% 
+  rename(date = ref_period) %>% 
+  mutate(date = ymd(date))
 cv_data_manage
 ```
 
@@ -130,23 +157,23 @@ pop_est_raw <- feather::read_feather("derived_data/pop_est_raw.feather")
 
 
 pop_est_raw %>% 
-  mutate(`0 years` = rowSums(pop_est_raw[,c(5)]),
-         `1-14 years` = rowSums(pop_est_raw[,c(15:19)]),
-         `15-44 years` = rowSums(pop_est_raw[,c(20:49)]),
-         `45-64 years` = rowSums(pop_est_raw[,c(50:69)]),
-         `65-74 years` = rowSums(pop_est_raw[,c(70:79)]),
-         `75-84 years` = rowSums(pop_est_raw[,c(80:89)]),
-         `85 years and over` = rowSums(pop_est_raw[,c(90:95)])) %>% 
-  select(`0 years`:`85 years and over`) %>%
+  mutate(`0-years` = rowSums(pop_est_raw[,c(5)]),
+         `1-14-years` = rowSums(pop_est_raw[,c(15:19)]),
+         `15-44-years` = rowSums(pop_est_raw[,c(20:49)]),
+         `45-64-years` = rowSums(pop_est_raw[,c(50:69)]),
+         `65-74-years` = rowSums(pop_est_raw[,c(70:79)]),
+         `75-84-years` = rowSums(pop_est_raw[,c(80:89)]),
+         `85-years-and-over` = rowSums(pop_est_raw[,c(90:95)])) %>% 
+  select(`0-years`:`85-years-and-over`) %>%
   slice(1:2) %>% 
-  summarise(`0 years` = sum(`0 years`),
-         `1-14 years` = sum(`1-14 years`),
-         `15-44 years` = sum(`15-44 years`),
-         `45-64 years` = sum(`45-64 years`),
-         `65-74 years` = sum(`65-74 years`),
-         `75-84 years` = sum(`75-84 years`),
-         `85 years and over` = sum(`85 years and over`)) %>% 
-  pivot_longer(cols = `0 years`:`85 years and over`, 
+  summarise(`0-years` = sum(`0-years`),
+         `1-14-years` = sum(`1-14-years`),
+         `15-44-years` = sum(`15-44-years`),
+         `45-64-years` = sum(`45-64-years`),
+         `65-74-years` = sum(`65-74-years`),
+         `75-84-years` = sum(`75-84-years`),
+         `85-years-and-over` = sum(`85-years-and-over`)) %>% 
+  pivot_longer(cols = `0-years`:`85-years-and-over`, 
                names_to = "age", 
                values_to = "pop_est_2018") -> pop_est_1
 ```
@@ -212,13 +239,13 @@ Simple count and % of deaths.
 
 ```{r, fig.width=12, fig.height=9}
 cv_data_main %>% 
-  filter(sex == "All" & location_of_death == "All" & cause_of_death == "COVID-19 related") %>% 
-  filter(age != "All") %>% 
+  filter(sex == "all" & location_of_death == "all" & ref_period == "2020",
+           cause_of_death == "covid-19-related" & age != "all") %>% 
   group_by(age) %>% 
   summarise(n = sum(value)) %>%
   mutate(pct = round(n/sum(n), 3)) %>% 
   ggplot(aes(age, n)) +
-  geom_col(fill = colour_palette[3]) +
+  geom_col(fill = economistt_pal()(1)) +
   geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80),
             size = 6) +
   scale_y_continuous(limits = c(0, 2000)) +
@@ -241,8 +268,8 @@ ggsave("plots/20200609_fig_1.png", fig_1, width = 12, height =9, dpi = 300)
 
 ```{r, fig.width=12, fig.height=9}
 cv_data_main %>% 
-  filter(sex == "All" & location_of_death == "All" & cause_of_death == "COVID-19 related") %>% 
-  filter(age != "All") %>% 
+  filter(sex == "all" & location_of_death == "all" & cause_of_death == "covid-19-related" &
+           ref_period == "2020" & age != "all") %>% 
   group_by(age) %>% 
   summarise(n = sum(value)) %>% 
   left_join(., pop_est_1) %>% 
@@ -250,7 +277,7 @@ cv_data_main %>%
          av_risk = sum(n)/sum(pop_est_2018),
          relative_risk = risk/av_risk) %>% 
   ggplot(aes(age, relative_risk)) +
-  geom_col(fill = colour_palette[3]) +
+  geom_col(fill = economist_pal()(1)) +
   geom_text(aes(label = round(relative_risk,1), 
                 y = relative_risk + 1), size = 6) +
   labs(title = "Risk of dying from COVID-19 relative to Scottish average",
@@ -272,7 +299,7 @@ ch_age_groups %>%
   left_join(., pop_est_2) %>% 
   mutate(pct = value/pop_est_2018) %>% 
   ggplot(aes(age, pct)) +
-  geom_col(fill = colour_palette[3]) +
+  geom_col(fill = economist_pal()(1)) +
   geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = pct + 0.01),
             size = 6) +
   scale_y_continuous(limits = c(0, 0.2),
@@ -291,6 +318,96 @@ ggsave("plots/20200609_fig_3.png", fig_3, width = 12, height =9, dpi = 300)
 ```
 
 ## Figure 4
+
+```{r, fig.width=12, fig.height=6}
+cv_data_manage %>% 
+  filter(variable %in% 
+           c("adult-care-homes-proportion-that-have-reported-a-suspected-covid-19-case")) %>%
+  mutate(value = as.integer(value)) %>% 
+  ggplot(aes(ymd(date), value)) +
+  geom_line(colour = economist_pal()(1)) +
+  scale_x_date(breaks = scales::pretty_breaks()) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1),
+                     limits = c(0, 80)) +
+  labs(title = "Proportion of care homes reporting suspected COVID-19 cases",
+       subtitle = "2020",
+       x = "",
+       y = "",
+       caption = "Source: statistics.gov.scot")
+```
+
+## Figure 5
+
+```{r}
+other <- cv_data_weekly %>% 
+  filter(sex == "all" & age == "all" & cause_of_death == "covid-19-related" &
+           location_of_death == "other-institution") %>% 
+  summarise(sum = sum(value)) %>% 
+  pull(.)
+
+cv_data_weekly %>% 
+  filter(sex == "all" & age == "all" & cause_of_death == "covid-19-related" &
+           location_of_death %nin% c("all", "other-institution")) %>% 
+  ggplot(aes(week_date, value, group = location_of_death, colour = location_of_death)) +
+  geom_line(size = 1.4) +
+  scale_colour_economist(labels = c("Home/non-institution", "Care Home", "Hospital")) +
+  scale_y_continuous(limits = c(0, 400)) +
+  scale_x_date(breaks = scales::pretty_breaks(n = 12)) +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12)) +
+  labs(title = "Weekly deaths involving COVID-19 in Scotland by setting",
+       x = "Week beginning",
+       y = "",
+       colour = "",
+       caption = glue::glue("Source:NRS Scotland\nExcludes other institutional place of death n = {other}"))
+```
+
+## Figure 6
+
+
+```{r}
+cv_data_weekly %>% 
+  filter(week_number >13 & sex == "all" & age == "all" & cause_of_death == "covid-19-related" &
+           location_of_death %nin% c("other-institution", "all")) %>% 
+  group_by(week_date) %>% 
+  mutate(pct = round(value/sum(value) * 100, 0)) %>% 
+  arrange(week_date, location_of_death) %>% 
+  mutate(value = as.double(value),
+         label_value = case_when(
+           location_of_death == "hospital" ~ value/2,
+           location_of_death == "care-home" ~ value/2 + lead(value),
+           location_of_death == "-non-institution" & value >22 ~ lead(value, 1) + 
+             lead(value, 2) + value/2,
+           location_of_death == "-non-institution" & value <=22 ~ lead(value, 1) + 
+             lead(value, 2) + (value +20)),
+         label_colour = case_when(
+           sum(value) < label_value ~ "black",
+           sum(value) > label_value ~ "white")) %>% 
+  ungroup -> stack_data
+
+stack_data %>% 
+  ggplot(aes(week_date, value, fill = location_of_death)) +
+  geom_col(position = "stack") +
+  geom_text(aes(x = week_date, y = label_value, label = paste0(pct,"%")),
+            size = 5, color = stack_data$label_colour) +
+  scale_x_date(breaks = scales::pretty_breaks(n = 12)) +
+  scale_fill_economist(labels = c("Home/non-institution", "Care Home", "Hospital"),
+                       guide = guide_legend(reverse = TRUE)) +
+  theme(legend.position = "top") +
+  labs(title = "Weekly Deaths from COVID-19",
+       subtitle = "by setting",
+       x = "Week beginning",
+       y = "",
+       fill = "",
+       caption = glue::glue("Source:NRS Scotland\nExcludes other institutional place of death n = {other}"))
+```
+
+## Figure 7
+
+```{r}
+
+```
+
 
 
 
