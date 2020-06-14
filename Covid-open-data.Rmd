@@ -28,7 +28,8 @@ library(lubridate)
 library(opendatascot) 
 library(here)
 library(curl)
-#library(phsmethods)   #remotes::install.github("Health-SocialCare-Scotland/phsmethods")
+library(ggthemes)
+
 
 `%nin%` <- negate(`%in%`)
 
@@ -238,6 +239,8 @@ feather::write_feather(ch_age_groups, "derived_data/ch_age_groups.feather")
 Simple count and % of deaths.
 
 ```{r, fig.width=12, fig.height=9}
+max_date <- max(cv_data_weekly$week_date) %>% format("%d-%b-%Y")
+
 cv_data_main %>% 
   filter(sex == "all" & location_of_death == "all" & ref_period == "2020",
            cause_of_death == "covid-19-related" & age != "all") %>% 
@@ -245,14 +248,15 @@ cv_data_main %>%
   summarise(n = sum(value)) %>%
   mutate(pct = round(n/sum(n), 3)) %>% 
   ggplot(aes(age, n)) +
-  geom_col(fill = economistt_pal()(1)) +
+  geom_col(fill = economist_pal()(1)) +
   geom_text(aes(label = scales::percent(pct, accuracy = 0.1), y = n + 80),
             size = 6) +
   scale_y_continuous(limits = c(0, 2000)) +
+  theme(axis.text.x = element_text(size = 14)) +
   labs(x = "",
        y = "", 
        title = "Deaths Associated with COVID-19 by Age Group",
-       subtitle = "16th March 2020 to 25th May 2020",       
+       subtitle = glue::glue("16-March-2020 to {max_date}"),       
        caption = "Source: National Records of Scotland\nDeaths where COVID-19 mentioned on the death certificate") -> fig_1
 
 fig_1
@@ -267,6 +271,8 @@ ggsave("plots/20200609_fig_1.png", fig_1, width = 12, height =9, dpi = 300)
 
 
 ```{r, fig.width=12, fig.height=9}
+
+
 cv_data_main %>% 
   filter(sex == "all" & location_of_death == "all" & cause_of_death == "covid-19-related" &
            ref_period == "2020" & age != "all") %>% 
@@ -280,8 +286,9 @@ cv_data_main %>%
   geom_col(fill = economist_pal()(1)) +
   geom_text(aes(label = round(relative_risk,1), 
                 y = relative_risk + 1), size = 6) +
+  theme(axis.text.x = element_text(size = 14)) +
   labs(title = "Risk of dying from COVID-19 relative to Scottish average",
-       subtitle = "16th March 2020 to 25th May 2020",
+       subtitle = glue::glue("16-March-2020 to {max_date}"),
        x = "",
        y = "Relative Risk",
        caption = "Source:National Records of Scotland\nand opendata.nhs.scot (2018 mid-year population estimates)")
@@ -350,7 +357,8 @@ cv_data_weekly %>%
            location_of_death %nin% c("all", "other-institution")) %>% 
   ggplot(aes(week_date, value, group = location_of_death, colour = location_of_death)) +
   geom_line(size = 1.4) +
-  scale_colour_economist(labels = c("Home/non-institution", "Care Home", "Hospital")) +
+  scale_colour_wsj(labels = c("Home/non-institution", "Care Home", "Hospital"),
+                   guide = guide_legend(reverse = TRUE)) +
   scale_y_continuous(limits = c(0, 400)) +
   scale_x_date(breaks = scales::pretty_breaks(n = 12)) +
   theme(legend.position = "top",
@@ -359,7 +367,7 @@ cv_data_weekly %>%
        x = "Week beginning",
        y = "",
        colour = "",
-       caption = glue::glue("Source:NRS Scotland\nExcludes other institutional place of death n = {other}"))
+       caption = glue::glue("Source:NRS Scotland- deaths where COVID-19 mentioned on the death certificate\nExcludes other institutional place of death n = {other}"))
 ```
 
 ## Figure 6
@@ -399,13 +407,45 @@ stack_data %>%
        x = "Week beginning",
        y = "",
        fill = "",
-       caption = glue::glue("Source:NRS Scotland\nExcludes other institutional place of death n = {other}"))
+       caption = glue::glue("Source:NRS Scotland- deaths where COVID-19 mentioned on the death certificate\nExcludes other institutional place of death n = {other}"))
 ```
 
 ## Figure 7
 
 ```{r}
-
+cv_data_weekly %>% 
+  filter(week_number >= 12 & sex == "all" & age == "all" &
+           cause_of_death %in% c("covid-19-related", "all") & 
+           location_of_death %nin% c("other-institution", "all")) %>%
+  group_by(cause_of_death, location_of_death) %>%
+  summarise(value = sum(value)) %>% 
+  pivot_wider(names_from = "cause_of_death", values_from = "value") %>% 
+  mutate(pct_covid = round(`covid-19-related`/sum(`covid-19-related`)* 100,1),
+         pct_all = round(`covid-19-related`/all* 100, 1)) %>% 
+  pivot_longer(c(pct_all, pct_covid), names_to = "measure", values_to = "value") %>%
+  mutate(location_of_death = factor(location_of_death,
+                                    levels = c("care-home", "hospital", "-non-institution"),
+                                    labels = c("Care Home", "Hospital", "Home/non-institution")),
+         measure = factor(measure, 
+                          levels = c("pct_covid", "pct_all"),
+                          labels = c("% of all Scottish\nCOVID-19 deaths",
+                                     "% of all deaths in location\nattributable to COVID-19"))) %>% 
+  ggplot(aes(location_of_death, value, fill = measure)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = paste0(value,"%")),
+            position = position_dodge(width = 1),
+            vjust = -1) +
+  scale_fill_economist() +
+  scale_y_continuous(limits = c(0, 55),
+                     labels = scales::percent_format(scale = 1)) +
+  theme(legend.position = "top") +
+  labs(title = "Percentage of deaths related to COVID-19",
+       subtitle = glue::glue("16-March-2020 to {max_date}"),
+       x = "",
+       y = "",
+       fill = "",
+       caption = glue::glue("Source:NRS Scotland- deaths where COVID-19 mentioned on the death certificate\nExcludes other institutional place of death n = {other}"))
+  
 ```
 
 
